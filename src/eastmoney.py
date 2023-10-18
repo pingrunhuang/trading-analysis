@@ -46,5 +46,6 @@ def calc_funding():
     deposit = deposit_df['funding_cny'].sum()
     logger.info(f"Total deposit: {deposit}")
     logger.info(f"Current balance: {deposit - withdraw}")
+    
 if __name__=="__main__":
     calc_funding()

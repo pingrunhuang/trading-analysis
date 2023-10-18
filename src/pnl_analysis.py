@@ -28,23 +28,28 @@ class Trade:
     stamp_tax: float
     transmit_fee: float
     regulate_fee: float
+    side: str
 
 
 class EMTradesPriorityQueue:
     def __init__(self) -> None:
-        self._elements = defaultdict(list)
+        self.buy_trades = []
+        self.sell_trades = []
         self.counter = count()
         self.is_long = None
         self.mongo_manager = MongoManager("fund")
 
-    def dequeue(self, symbol:str)->Optional[Trade]:
+    def dequeue(self, side:str)->Optional[Trade]:
         try:
-            return heappop(self._elements[symbol])[-1]
+            if side == "S":
+                return heappop(self.sell_trades)[-1]
+            elif side == "B":
+                return heappop(self.buy_trades)[-1]
         except IndexError:
             return None
         
-    def enqueue(self, trade: Trade):        
-        heappush(self._elements[trade.symbol], (trade.dt, next(self.counter), trade))
+    def enqueue(self, trade: Trade, container:list):
+        heappush(container, (trade.dt, next(self.counter), trade))
     
     def load_trade(self, symbol:str):
         clc = self.mongo_manager.db.get_collection("em_trades")
@@ -52,23 +57,37 @@ class EMTradesPriorityQueue:
         if not res:
             raise ValueError(f'symbol={symbol} not found')
         for doc in res:
-            if doc["buysell"] == "S":
-                yield Trade(doc["symbol"], doc["trade_prx"], doc["trade_amt"], doc["datetime"], doc["trade_fee"], doc["stamp_tax"], doc["transmit_fee"], doc["regulate_fee"])
-            else:
-                yield Trade(doc["symbol"], doc["trade_prx"], -doc["trade_amt"], doc["datetime"], doc["trade_fee"], doc["stamp_tax"], doc["transmit_fee"], doc["regulate_fee"])
-    
+            yield Trade(doc["symbol"], doc["trade_prx"], doc["trade_amt"], doc["datetime"], doc["trade_fee"], doc["stamp_tax"], doc["transmit_fee"], doc["regulate_fee"], doc["buysell"])
 
     def calculate_pnl(self, symbol:str):
         
         for trade in self.load_trade(symbol):
-            self.enqueue(trade)
-        logger.info(f"Finished enqueue trades")
-        trade = self.dequeue(symbol)
+            if trade.side == "S":
+                self.enqueue(trade, self.sell_trades)
+            elif trade.side == "B":
+                self.enqueue(trade, self.buy_trades)
+
+        logger.info(f"Finished enqueueing buy trades: {len(self.buy_trades)}")
+        logger.info(f"Finished enqueueing sell trades: {len(self.sell_trades)}")
+        sell_trade = self.dequeue("S")
+        buy_trade = self.dequeue("B")
         result = 0
-        while trade:
-            total_fee = trade.transmit_fee+trade.trade_fee+trade.stamp_tax+trade.regulate_fee
-            total_ntl = trade.prx*trade.qty
-            result = result + total_ntl+total_fee
+        total_fee = 0
+        buy_qty = 0
+        buy_prx = 0
+        buy_ntl = 0
+        while sell_trade or buy_trade:
+            if buy_trade:
+                total_fee += buy_trade.transmit_fee+buy_trade.trade_fee+buy_trade.stamp_tax+buy_trade.regulate_fee
+                buy_ntl = buy_trade.prx*buy_trade.qty
+                logger.info(f"Current open position: {buy_qty}")
+
+            if sell_trade:
+                total_fee += sell_trade.transmit_fee+sell_trade.trade_fee+sell_trade.stamp_tax+sell_trade.regulate_fee
+                sell_ntl = sell_trade.qty*sell_trade.prx
+                pnl = sell_ntl - buy_ntl
+            
+            result = result + total_ntl
             logger.info(f"current pnl at {trade.dt}: {result}")
             trade = self.dequeue(symbol)
         logger.info(f"final pnl: {result}")
