@@ -32,66 +32,64 @@ class Trade:
 
 
 class EMTradesPriorityQueue:
+    """
+    This is a no short situation
+    Meaning we can only sell before buy 
+    """
     def __init__(self) -> None:
         self.buy_trades = []
-        self.sell_trades = []
         self.counter = count()
         self.is_long = None
         self.mongo_manager = MongoManager("fund")
+        self.realized_pnl = 0
 
-    def dequeue(self, side:str)->Optional[Trade]:
+    def dequeue(self)->Optional[Trade]:
         try:
-            if side == "S":
-                return heappop(self.sell_trades)[-1]
-            elif side == "B":
-                return heappop(self.buy_trades)[-1]
+            yield heappop(self.buy_trades)[-1]
         except IndexError:
             return None
         
-    def enqueue(self, trade: Trade, container:list):
-        heappush(container, (trade.dt, next(self.counter), trade))
+    def enqueue(self, trade:Trade):
+        heappush(self.buy_trades, (trade.dt, trade))
     
     def load_trade(self, symbol:str):
         clc = self.mongo_manager.db.get_collection("em_trades")
         res = clc.find({"symbol":symbol}, sort=[("datetime",1)])
         if not res:
             raise ValueError(f'symbol={symbol} not found')
+        trades = 0
         for doc in res:
             yield Trade(doc["symbol"], doc["trade_prx"], doc["trade_amt"], doc["datetime"], doc["trade_fee"], doc["stamp_tax"], doc["transmit_fee"], doc["regulate_fee"], doc["buysell"])
+            trades+=1
+        logger.info(f"Fetched {trades} trades")
 
     def calculate_pnl(self, symbol:str):
-        
+        logger.info(f"Start calculating pnl of {symbol.encode('utf-8')}")
+
         for trade in self.load_trade(symbol):
-            if trade.side == "S":
-                self.enqueue(trade, self.sell_trades)
-            elif trade.side == "B":
-                self.enqueue(trade, self.buy_trades)
+            if trade.side == "B":
+                self.enqueue(trade)
+            else:
+                # sell_fee = trade.transmit_fee+trade.trade_fee+trade.stamp_tax+trade.regulate_fee
+                sell_prx = trade.prx
+                sell_qty = trade.qty
+                while sell_qty>0:
+                    buy_trade = self.dequeue()
+                    # buy_fee = buy_trade.transmit_fee+buy_trade.trade_fee+buy_trade.stamp_tax+buy_trade.regulate_fee
+                    if sell_qty>buy_trade.qty:
+                        diff_qty = buy_trade.qty
+                    else:
+                        diff_qty = sell_qty
+                        if sell_qty<buy_trade.qty:
+                            buy_trade.qty -= sell_qty
+                            self.enqueue(buy_trade)
+                        else:
+                            logger.info(f"Liquidate trade at {trade.dt}")
+                    self.realized_pnl+=diff_qty*(sell_prx-buy_trade.prx)
+                    sell_qty-=diff_qty
 
-        logger.info(f"Finished enqueueing buy trades: {len(self.buy_trades)}")
-        logger.info(f"Finished enqueueing sell trades: {len(self.sell_trades)}")
-        sell_trade = self.dequeue("S")
-        buy_trade = self.dequeue("B")
-        result = 0
-        total_fee = 0
-        buy_qty = 0
-        buy_prx = 0
-        buy_ntl = 0
-        while sell_trade or buy_trade:
-            if buy_trade:
-                total_fee += buy_trade.transmit_fee+buy_trade.trade_fee+buy_trade.stamp_tax+buy_trade.regulate_fee
-                buy_ntl = buy_trade.prx*buy_trade.qty
-                logger.info(f"Current open position: {buy_qty}")
+        logger.info(f"Realized pnl: {self.realized_pnl}")
 
-            if sell_trade:
-                total_fee += sell_trade.transmit_fee+sell_trade.trade_fee+sell_trade.stamp_tax+sell_trade.regulate_fee
-                sell_ntl = sell_trade.qty*sell_trade.prx
-                pnl = sell_ntl - buy_ntl
-            
-            result = result + total_ntl
-            logger.info(f"current pnl at {trade.dt}: {result}")
-            trade = self.dequeue(symbol)
-        logger.info(f"final pnl: {result}")
-        return result
 
 if __name__=="__main__":
     q = EMTradesPriorityQueue()
