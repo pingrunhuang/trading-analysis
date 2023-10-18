@@ -1,0 +1,6 @@
+# example-package
+
+
+"""
+pdm install
+"""

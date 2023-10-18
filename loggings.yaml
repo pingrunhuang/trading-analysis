@@ -1,0 +1,38 @@
+version: 1
+formatters:
+  default:
+      format: "%(asctime)s|%(levelname)s|%(message)s"
+  error:
+      format: "%(levelname)s|<PID %(process)d:%(processName)s>|%(name)s.%(funcName)s(): %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: default
+    level: INFO
+  file:
+    class: logging.handlers.RotatingFileHandler
+    formatter: default
+    level: DEBUG
+    filename: app.log
+    maxBytes: 10240000
+    backupCount: 5
+  error:
+    class: logging.handlers.RotatingFileHandler
+    formatter: error
+    level: ERROR
+    filename: error.log
+    maxBytes: 1024
+    backupCount: 10
+
+loggers:
+  connections:
+    handlers: [console, file, error]
+    # even handlers already setup levels, this level is important to setup for logger level 
+    level: DEBUG
+  eastmoney:
+    handlers: [console, file, error]
+    level: DEBUG
+  main:
+    handlers: [console, file, error]
+    level: DEBUG
