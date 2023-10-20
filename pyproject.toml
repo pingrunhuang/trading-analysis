@@ -18,6 +18,7 @@ dependencies = [
     "scikit-learn>=1.2.2",
     "numpy>=1.25.0",
     "PyYaml>=6.0",
+    "rich>=13.6.0",
 ]
 requires-python = ">=3.9,<3.11"
 license = {text = "MIT"}

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Use a priority queue to define the most early one of the trades that are opened
 pop that first
@@ -48,6 +49,9 @@ class EMTradesPriorityQueue:
             return heappop(self.buy_trades)[-1]
         except IndexError:
             return None
+    
+    def is_open(self):
+        return len(self.buy_trades)!=0
         
     def enqueue(self, trade:Trade):
         heappush(self.buy_trades, (trade.dt, trade))
@@ -71,14 +75,17 @@ class EMTradesPriorityQueue:
         if trade.side == "B":
             self.enqueue(trade)
         else:
-            logger.info(f"Closing position: {trade}")
             sell_fee = trade.transmit_fee+trade.trade_fee+trade.stamp_tax+trade.regulate_fee
             sell_prx = trade.prx
             sell_qty = trade.qty
             open_dates = []
+            profit=0
             while sell_qty>0:
                 buy_trade = self.dequeue()
+                if not buy_trade:
+                    raise ValueError(f"No buy trades exists, sell trade impossible")
                 buy_fee = buy_trade.transmit_fee+buy_trade.trade_fee+buy_trade.stamp_tax+buy_trade.regulate_fee
+                logger.warning(f"buy_fee={buy_fee}")
                 open_dates.append(buy_trade.dt)
                 if sell_qty>buy_trade.qty:
                     diff_qty = buy_trade.qty
@@ -90,18 +97,26 @@ class EMTradesPriorityQueue:
                     else:
                         logger.info(f"position opened at {open_dates}, closed at {trade.dt}")
                         self.realized_pnl-=sell_fee
-                self.realized_pnl+=diff_qty*(sell_prx-buy_trade.prx)
+                        logger.warning(f"sell_fee={sell_fee}")
+                profit += diff_qty*(sell_prx-buy_trade.prx)
+                logger.warning(f"profit={profit}")
+                self.realized_pnl+=profit
                 self.realized_pnl-=buy_fee
                 sell_qty-=diff_qty
-            
 
-    def calculate_pnl(self, symbol:str):
-        logger.info(f"Start calculating pnl of {symbol}")
-        for trade in self.load_trade({"symbol":symbol}):
+            if not self.is_open():
+                profit=0
+                logger.info("="*200)
+
+
+    def calculate_pnl(self, filter:dict):
+        logger.info(f"Start calculating pnl of {filter}")
+        for trade in self.load_trade(filter):
             self._calculate_pnl(trade)
         logger.info(f"Realized pnl: {self.realized_pnl}")
+        logger.info(f"Long position={len(self.buy_trades)}")
 
 
 if __name__=="__main__":
     q = EMTradesPriorityQueue()
-    q.calculate_pnl("中远海能")
+    q.calculate_pnl({"symbol_id":"159954"})

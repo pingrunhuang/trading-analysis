@@ -17,6 +17,7 @@ handlers:
     filename: app.log
     maxBytes: 10240000
     backupCount: 5
+    encoding: utf-8
   error:
     class: logging.handlers.RotatingFileHandler
     formatter: error
@@ -24,15 +25,17 @@ handlers:
     filename: error.log
     maxBytes: 1024
     backupCount: 10
+  rich:
+    class: rich.logging.RichHandler
 
 loggers:
   connections:
-    handlers: [console, file, error]
+    handlers: [rich, file, error]
     # even handlers already setup levels, this level is important to setup for logger level 
     level: DEBUG
   eastmoney:
-    handlers: [console, file, error]
+    handlers: [rich, file, error]
     level: DEBUG
   main:
-    handlers: [console, file, error]
+    handlers: [rich, file, error]
     level: DEBUG
