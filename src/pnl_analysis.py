@@ -43,6 +43,7 @@ class EMTradesPriorityQueue:
         self.is_long = None
         self.mongo_manager = MongoManager("fund")
         self.realized_pnl = 0
+        self.unrealized_pnl = 0
 
     def dequeue(self)->Optional[Trade]:
         try:
@@ -71,8 +72,8 @@ class EMTradesPriorityQueue:
         logger.info(f"Fetched {trades} trades")
     
     def _calculate_pnl(self, trade:Trade):
-        logger.info(f"Checking trade: {trade}")
         if trade.side == "B":
+            logger.info(f"enqueing trade: {trade}")
             self.enqueue(trade)
         else:
             sell_fee = trade.transmit_fee+trade.trade_fee+trade.stamp_tax+trade.regulate_fee
@@ -85,7 +86,6 @@ class EMTradesPriorityQueue:
                 if not buy_trade:
                     raise ValueError(f"No buy trades exists, sell trade impossible")
                 buy_fee = buy_trade.transmit_fee+buy_trade.trade_fee+buy_trade.stamp_tax+buy_trade.regulate_fee
-                logger.warning(f"buy_fee={buy_fee}")
                 open_dates.append(buy_trade.dt)
                 if sell_qty>buy_trade.qty:
                     diff_qty = buy_trade.qty
@@ -96,13 +96,18 @@ class EMTradesPriorityQueue:
                         self.enqueue(buy_trade)
                     else:
                         logger.info(f"position opened at {open_dates}, closed at {trade.dt}")
-                        self.realized_pnl-=sell_fee
-                        logger.warning(f"sell_fee={sell_fee}")
-                profit += diff_qty*(sell_prx-buy_trade.prx)
-                logger.warning(f"profit={profit}")
-                self.realized_pnl+=profit
-                self.realized_pnl-=buy_fee
+                        # self.realized_pnl-=sell_fee
+                        # logger.warning(f"sell_fee={sell_fee}")
+                
+                diff_ntl=diff_qty*(sell_prx-buy_trade.prx)
+                logger.warning(f"sell_trade={sell_prx}@{sell_qty}, buy_trade={buy_trade.prx}@{buy_trade.qty}, sell_qty={diff_qty}, diff_ntl={diff_ntl}, buy_fee={buy_fee}")
+                profit-=buy_fee
+                profit+=diff_ntl
                 sell_qty-=diff_qty
+            logger.warning(f"sell_fee={sell_fee}, total_profit={profit}")
+            self.realized_pnl+=profit
+            self.realized_pnl-=sell_fee
+            
 
             if not self.is_open():
                 profit=0
@@ -114,9 +119,13 @@ class EMTradesPriorityQueue:
         for trade in self.load_trade(filter):
             self._calculate_pnl(trade)
         logger.info(f"Realized pnl: {self.realized_pnl}")
-        logger.info(f"Long position={len(self.buy_trades)}")
+        if len(self.buy_trades):
+            logger.info(f"opened positions:")
+            for t in self.buy_trades:
+                logger.info(t)
+            
 
 
 if __name__=="__main__":
     q = EMTradesPriorityQueue()
-    q.calculate_pnl({"symbol_id":"159954"})
+    q.calculate_pnl({"symbol_id":"002594"})
